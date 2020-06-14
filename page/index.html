@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shorty-RS</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="index.ts"></script>
+</head>
+<body>
+    <header>
+        <h1>SHORTY<span class="bold">RS</span></h1>
+    </header>
+    <main>
+        <form id="create" action="/create" method="post">
+            <label for="long-url">The URL to shorten</label>
+            <input type="text" name="long-url" id="long-url" placeholder="Long URL">
+            <p id="long-validity-message"></p>
+            <label for="provide-short-url">Use this custom Short-URL (if available)</label>
+            <input type="checkbox" name="provide-short-url" id="provide-short-url">
+            <div id="short-url-wrapper">
+                <p id="url-prefix">www.test.com/s/</p>
+                <input type="text" disabled name="short-url" id="short-url" placeholder="Short URL">
+            </div>
+            <p id="short-validity-message"></p>
+            <label for="provide-short-url">Authentification-code (issued by Matthias)</label>
+            <input type="password" name="password" id="password" placeholder="Password">
+            <button type="submit">Create Short-URL</button>
+        </form>
+        <p style="margin: 0 1em; color: lightcoral;">This server will store your ip-address if you create a shortened url in order to prevent spamming.</p>
+    </main>
+    <footer class="footer">
+        <p>© Matthias Kind 2020</p><a href="https://www.github.com/lokmeinmatz/shorty-rs">Projekt auf Github</a>
+    </footer>
+</body>
+</html>
