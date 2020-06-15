@@ -2,5 +2,8 @@
   "devDependencies": {
     "cssnano": "^4.1.10",
     "typescript": "^3.9.5"
+  },
+  "scripts": {
+    "build": "parcel build .\\*.html --public-url /static/"
   }
 }

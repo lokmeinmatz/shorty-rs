@@ -28,9 +28,20 @@ window.onload = () => {
         }
 
         const res = await fetch(`/free?long=${url}`)
+        if (res.status != 200) {
+            longUrlInput.classList.add('invalid')
+            longUrlInput.classList.remove('valid')
+            longValidityInfo.style.display = 'block'
+            longValidityInfo.textContent = await res.text()
+        }
+        else {
+            longUrlInput.classList.add('valid')
+            longUrlInput.classList.remove('invalid')
+            longValidityInfo.style.display = 'none'
+        }
     }
 
-    longUrlInput.oninput
+    longUrlInput.oninput = validateLong
 
     // --- custom short url ---
     

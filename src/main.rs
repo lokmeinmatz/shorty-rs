@@ -7,11 +7,13 @@ use std::convert::TryFrom;
 
 mod request;
 use request::*;
+use crate::database::Database;
 
 mod response;
-use response::*;
 
 mod handler;
+
+mod database;
 
 pub(crate) fn log<T: AsRef<str>>(msg: T) {
     println!("[{:?}] {}", Local::now(), msg.as_ref());
@@ -26,21 +28,29 @@ fn main() {
 
     request::init_regex();
 
+    log("Starting listener");
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], PORT))).unwrap();
 
+    log("connectiong to database");
 
+    let db = database::SQLiteDB::init_database("./database.sqlite")
+        .expect("Database init failed");
 
 
     log(format!("Listening on addr {:?}", listener.local_addr()));
 
     for stream in listener.incoming() {
-        let res: Result<(), ()> = stream.and_then(handle_request)
-            .or_else(|e| Ok(log(format!("handling failed: {:?}", e))));
+        if let Ok(s) = stream {
+            handle_request(s, db.as_ref()).or_else(|e| {
+                log(format!("handling failed: {:?}", e));
+                Err(())
+            });
+        }
     }
 }
 
 
-fn handle_request(mut s: TcpStream) -> std::io::Result<()> {
+fn handle_request(mut s: TcpStream, db: &dyn Database) -> std::io::Result<()> {
     let mut buffer = [0; 512];
 
     s.read(&mut buffer)?;
@@ -54,7 +64,7 @@ fn handle_request(mut s: TcpStream) -> std::io::Result<()> {
 
     // routing
     if req.url.len() == 0 && req.method == Method::Get {
-        return handler::send_create_page(s);
+        return handler::home_page(s);
     }
     else if req.url.len() > 0 && req.url[0].eq_ignore_ascii_case("static") {
         return handler::static_content(s, req);
@@ -62,8 +72,10 @@ fn handle_request(mut s: TcpStream) -> std::io::Result<()> {
     else if req.url.len() > 0 && req.url[0].eq_ignore_ascii_case("free") {
         return handler::free_check(s, req);
     }
+    else if req.url.len() > 0 && req.url[0].eq_ignore_ascii_case("create") {
+        return handler::create_page(s, req, db);
+    }
+
     println!("unknown req: {:?}", req.url);
-    return handler::send_error_page(s, req);
-    //unimplemented!();
-    Ok(())
+    handler::send_404_page(s, req)
 }

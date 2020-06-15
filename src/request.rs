@@ -5,6 +5,7 @@ use crate::log;
 
 pub static RE_GET_HEADER: Option<Regex> = None;
 pub static RE_SHORT_URL_VALIDATE: Option<Regex> = None;
+pub static RE_LONG_URL_VALIDATE: Option<Regex> = None;
 
 pub(crate) fn init_regex() {
 
@@ -13,6 +14,8 @@ pub(crate) fn init_regex() {
     unsafe {
         *(&RE_GET_HEADER as *const _ as *mut _) = Some(Regex::new(r"(GET|POST) /([^?\s]*/?)*(?:\?(\S+=\S+)+)? HTTP/1\.1").unwrap());
         *(&RE_SHORT_URL_VALIDATE as *const _ as *mut _) = Some(Regex::new(r"^[\w\d|\-|_]{3,}$").unwrap());
+        // TODO valid url regex
+        *(&RE_LONG_URL_VALIDATE as *const _ as *mut _) = Some(Regex::new(r"^(?:http[s]?://)?").unwrap());
     }
 }
 
@@ -34,12 +37,19 @@ impl TryFrom<&str> for Method {
     }
 }
 
+
+#[derive(Debug)]
+pub enum RequestBody {
+    FormUrlEncoded(HashMap<String, String>)
+}
+
 #[derive(Debug)]
 pub struct Request {
     pub method: Method,
     pub url: Box<[String]>,
     pub params: HashMap<String, String>,
     pub headers: HashMap<String, String>,
+    pub body: Option<RequestBody>
 }
 
 impl Request {
@@ -53,6 +63,7 @@ impl TryFrom<&str> for Request {
     type Error = &'static str;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
+        println!("{}", s);
         let mut lines = s.lines();
 
 
@@ -86,10 +97,24 @@ impl TryFrom<&str> for Request {
             if l.is_empty() { break }
 
             if let Some(split_idx) = l.find(":") {
-                let name = &l[0..split_idx];
-                let value = &l[split_idx + 1 ..];
+                let name = (&l[0..split_idx]).trim();
+                let value = (&l[split_idx + 1 ..]).trim();
                 headers.insert(name.into(), value.into());
             }
+        }
+        let mut body = None;
+        println!("{:?}", headers);
+        if headers.get("Content-Type")
+            .map_or(false,
+                    |ct: &String| ct.eq_ignore_ascii_case("application/x-www-form-urlencoded")) {
+            let form_str = lines.next().ok_or("Expected form data")?;
+            let mut payload = HashMap::new();
+            for (key, val) in form_str.split("&").map(|u| {
+                let sidx = u.find("=").unwrap_or(0);
+                (&u[0..sidx], &u[sidx + 1..])
+            }) {payload.insert(key.into(), val.into());
+            }
+            body = Some(RequestBody::FormUrlEncoded(payload));
         }
 
         //println!("{:?} {:?} {:?}", method, url, query);
@@ -98,7 +123,8 @@ impl TryFrom<&str> for Request {
             method,
             url: url.into_boxed_slice(),
             params: query,
-            headers
+            headers,
+            body
         })
     }
 }

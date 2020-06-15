@@ -7,6 +7,7 @@ use crate::log;
 #[derive(Clone, Copy)]
 pub enum ResponseCode {
     Ok = 200,
+    BadRequest = 400,
     NotFound = 404,
     NotAcceptable = 406
 }
@@ -15,6 +16,7 @@ impl ResponseCode {
     pub fn as_reason(&self) -> &'static str {
         match self {
             ResponseCode::Ok => "Ok",
+            ResponseCode::BadRequest => "Bad Request",
             ResponseCode::NotFound => "Not Found",
             ResponseCode::NotAcceptable => "Not Acceptable"
         }
