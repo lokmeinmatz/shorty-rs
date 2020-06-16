@@ -1,8 +1,11 @@
 use std::net::TcpStream;
 use crate::response::{Response, ResponseCode, ResponseBody};
-use crate::request::{Request, RE_SHORT_URL_VALIDATE, RE_LONG_URL_VALIDATE, RequestBody};
+use crate::request::{Request, RE_SHORT_URL_VALIDATE, RE_LONG_URL_VALIDATE, RequestBody, Method};
 use crate::database::Database;
 use rand::Rng;
+use crate::log;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 pub const RESERVED_URLS: [&str; 5] = [
     "create",
@@ -12,33 +15,96 @@ pub const RESERVED_URLS: [&str; 5] = [
     "config"
 ];
 
+pub const HANDLERS: [(&'static str, RoutingFn, HandlerFn); 4] = [
+    // home page
+    ("home_page", |req| req.url.len() == 0 && req.method == Method::Get
+     , home_page),
+    // create page
+    ("create_page", |req| req.url.len() == 1 && req.url[0].eq_ignore_ascii_case("create"),
+    create_page),
+    //
+    ("free_check", |req| req.url.len() == 1 && req.url[0].eq_ignore_ascii_case("free"),
+     free_check),
+    // static
+    ("static", |req| req.url.len() > 1 && req.url[0].eq_ignore_ascii_case("static"), static_content)
+];
 
-pub fn create_page(mut s: TcpStream, req: Request, db: &dyn Database) -> std::io::Result<()> {
-    match req.body {
+type RoutingFn = fn(req: &Request) -> bool;
+
+pub enum HandlerError {
+    E404,
+    E400(String),
+    Custom(Response)
+}
+
+type HandlerFn = fn(req: &Request, db: &dyn Database) -> Result<Response, HandlerError>;
+
+
+
+pub fn create_page(req: &Request, db: &dyn Database) -> Result<Response, HandlerError> {
+    log(format!("create {:?}", req.body));
+    match &req.body {
         Some(RequestBody::FormUrlEncoded(map)) => {
             if let (Some(code), Some(long)) = (map.get("password"), map.get("long-url")) {
-                if db.is_password(code) && validate_long_url(long).is_ok() {
+
+                let mut long = long.clone();
+                if !long.starts_with("https://") && !long.starts_with("http://") {
+                    long.insert_str(0, "https://");
+                }
+
+                // TODO do we need transactions?
+                if db.is_password(code) && validate_long_url(&long).is_ok() {
                     // pw correct and long url valid
                     let short = map.get("short-url").map_or_else(|| gen_free_random_url(db),|s| s.to_owned());
+                    if db.peek_long_url(&short).is_ok() {
+                        // TODO return when short is used
+                        return Err(HandlerError::E400(format!("Short URL {} allready exists.", &short)));
+                    }
+                    let ip_hash = {
+                        let mut h = DefaultHasher::new();
+                        req.ip.hash(&mut h);
+                        h.finish() as u32
+                    };
+
+                    // check if user contingent is maxed out
+                    let urls_created = db.urls_stored_last_7_days(ip_hash);
+                    log(format!("Urls created by ith ip: {}", urls_created));
+
+                    if urls_created > 100 {
+                        return Err(HandlerError::E400("You allready created 100 URLs in the last 7 days... Thats a lot!".into()));
+                    }
+
+                    log(format!("Storing {} -> {}", &short, long));
+                    db.store_shortened(&long, &short, ip_hash).map_err(|e| HandlerError::E400(e))?;
+
+                    let mut file = std::fs::read_to_string("./page/dist/created.html").unwrap();
+                    let host_url = std::env::var("SHORTY_BASE_URL").unwrap();
+                    file = file.replace("{{short-url}}", &format!("{}/{}", host_url, short));
+                    file = file.replace("{{long-url}}", &long);
+                    return Ok(Response{
+                        code: ResponseCode::Ok,
+                        custom_headers: None,
+                        body: ResponseBody::Html(file)
+                    })
                 }
             }
         },
         None => {}
     }
-    send_gen_error_page(s, "No Request transmitted")
+    Err(HandlerError::E400("No body transmitted".into()))
 }
 
-fn gen_free_random_url(db: &dyn Database) -> String {
+fn gen_free_random_url(_db: &dyn Database) -> String {
     let mut rg = rand::thread_rng();
-    let allowed_chars = ('a'..'z')
-        .chain('A'..'Z')
-        .chain('0'..'9').cylce();
+    let mut allowed_chars = (b'a'..b'z')
+        .chain(b'A'..b'Z')
+        .chain(b'0'..b'9').cycle();
 
     const ALLOWED_CHARS_LEN: usize = 26 * 2 + 10;
 
     for _ in 0..100 {
-        let res: String = (0..5).next().map(|_|
-            allowed_chars.nth(rg.gen_range(0, ALLOWED_CHARS_LEN)).unwrap()
+        let res: String = (0..5).map(|_|
+            allowed_chars.nth(rg.gen_range(0, ALLOWED_CHARS_LEN)).unwrap() as char
         ).collect();
         if validate_short_url(&res) {
             return res;
@@ -47,37 +113,51 @@ fn gen_free_random_url(db: &dyn Database) -> String {
     panic!("Not enough free short urls!")
 }
 
-pub fn home_page(mut s: TcpStream) -> std::io::Result<()> {
+pub fn home_page(_req: &Request, _db: &dyn Database) -> Result<Response, HandlerError> {
     let page = std::fs::read_to_string("./page/dist/index.html").unwrap();
     let r = Response{
         code: ResponseCode::Ok,
+        custom_headers: None,
         body: ResponseBody::Html(page)
     };
-    r.write_html11(&mut s)
+    Ok(r)
 }
 
-pub fn send_gen_error_page(mut s: TcpStream, error: &str) -> std::io::Result<()> {
+pub fn send_gen_error_page(s: &mut TcpStream, error: &str) -> std::io::Result<()> {
     let mut page = std::fs::read_to_string("./page/dist/400.html").unwrap();
 
     page = page.replace("{{error}}", error);
 
     let r = Response{
         code: ResponseCode::BadRequest,
+        custom_headers: None,
         body: ResponseBody::Html(page)
     };
-    r.write_html11(&mut s)
+    r.write_html11(s)
 }
 
-pub fn send_404_page(mut s: TcpStream, req: Request) -> std::io::Result<()> {
-    let mut page = std::fs::read_to_string("./page/dist/404.html").unwrap();
+pub fn send_404_page(s: &mut TcpStream, req: &Request) -> std::io::Result<()> {
+    if let Some(accpt) = req.headers.get("Accept") {
+        if accpt.contains("text/html") {
+            let mut page = std::fs::read_to_string("./page/dist/404.html").unwrap();
 
-    page = page.replace("{{url}}", &req.url.join("/"));
+            page = page.replace("{{url}}", &req.url.join("/"));
+
+            let r = Response{
+                code: ResponseCode::NotFound,
+                custom_headers: None,
+                body: ResponseBody::Html(page)
+            };
+            return r.write_html11(s);
+        }
+    }
 
     let r = Response{
         code: ResponseCode::NotFound,
-        body: ResponseBody::Html(page)
+        custom_headers: None,
+        body: ResponseBody::Empty
     };
-    r.write_html11(&mut s)
+    r.write_html11(s)
 }
 
 pub fn validate_short_url(short: &str) -> bool {
@@ -115,8 +195,8 @@ fn validate_long_url(long: &str) -> ValidationResult {
     ValidationResult::Ok
 }
 
-pub fn free_check(mut s: TcpStream, req: Request) -> std::io::Result<()> {
-    println!("{:?}", req.params);
+pub fn free_check(req: &Request, _db: &dyn Database) -> Result<Response, HandlerError> {
+    //println!("{:?}", req.params);
     // TODO check long urls
     let mut rcode = ResponseCode::NotAcceptable;
     let mut rbody = ResponseBody::Empty;
@@ -151,23 +231,26 @@ pub fn free_check(mut s: TcpStream, req: Request) -> std::io::Result<()> {
     }
     let res = Response {
         code: rcode,
+        custom_headers: None,
         body: rbody
     };
-    res.write_html11(&mut s)
+    Ok(res)
 }
 
-pub fn static_content(mut s: TcpStream, req: Request) -> std::io::Result<()> {
+pub fn static_content(req: &Request, _db: &dyn Database) -> Result<Response, HandlerError> {
 
     let mut path: String = req.url[1..].join("/");
     if path.contains("..") {
-        return send_404_page(s, req);
+        // TODO allow 404 return
+        return Err(HandlerError::E404);
     }
     path.insert_str(0, "./page/dist/");
 
 
     let r = Response{
         code: ResponseCode::Ok,
-        body: ResponseBody::load_from_file(&path)?
+        custom_headers: None,
+        body: ResponseBody::load_from_file(&path).map_err(|_| HandlerError::E404)?
     };
-    r.write_html11(&mut s)
+    Ok(r)
 }

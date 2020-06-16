@@ -2,11 +2,13 @@ use std::net::TcpStream;
 use std::io::Write;
 use std::path::Path;
 use crate::log;
+use std::collections::HashMap;
 
 #[repr(u16)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ResponseCode {
     Ok = 200,
+    MovedPermanently = 301,
     BadRequest = 400,
     NotFound = 404,
     NotAcceptable = 406
@@ -16,6 +18,7 @@ impl ResponseCode {
     pub fn as_reason(&self) -> &'static str {
         match self {
             ResponseCode::Ok => "Ok",
+            ResponseCode::MovedPermanently => "Moved Permanently",
             ResponseCode::BadRequest => "Bad Request",
             ResponseCode::NotFound => "Not Found",
             ResponseCode::NotAcceptable => "Not Acceptable"
@@ -23,7 +26,7 @@ impl ResponseCode {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ResponseBody {
     Empty,
     Html(String),
@@ -88,17 +91,25 @@ impl ResponseBody {
     }
 }
 
+#[derive(Debug)]
 pub struct Response {
     pub code: ResponseCode,
+    pub custom_headers: Option<HashMap<String, String>>,
     pub body: ResponseBody
 }
 
 
 impl Response {
     pub fn write_html11(self, s: &mut TcpStream) -> std::io::Result<()> {
-        log(format!("Sending response {} content-type : {}", self.code as u16, self.body.get_content_type()));
+        //println!("Sending response {:?} ", self);
         writeln!(s, "HTTP/1.1 {} {}", self.code as u16, self.code.as_reason())?;
+        if let Some(headers) = &self.custom_headers {
+            for (key, val) in headers.iter() {
+                writeln!(s, "{}: {}", key, val)?;
+            }
+        }
         if self.body.is_empty() { return Ok(()) }
+
         writeln!(s, "Content-Type: {}", self.body.get_content_type())?;
         writeln!(s, "Content-Length: {}", self.body.get_length())?;
         writeln!(s, "")?;

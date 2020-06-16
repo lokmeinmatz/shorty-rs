@@ -2,12 +2,15 @@
 
 use std::net::{TcpListener, SocketAddr, TcpStream};
 use chrono::prelude::*;
-use std::io::{Read, ErrorKind, Error};
+use std::io::{ErrorKind, BufReader};
 use std::convert::TryFrom;
 
 mod request;
 use request::*;
 use crate::database::Database;
+use crate::handler::HandlerError;
+use crate::response::{Response, ResponseCode, ResponseBody};
+use std::collections::HashMap;
 
 mod response;
 
@@ -26,14 +29,18 @@ const PORT: u16 = 7070;
 fn main() {
     log("Started Shorty-rs");
 
+    let base_url = std::env::var("SHORTY_BASE_URL").expect("Set SHORTY_BASE_URL");
+
+    log(format!("Base address: {}", base_url));
+
     request::init_regex();
 
     log("Starting listener");
     let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], PORT))).unwrap();
 
-    log("connectiong to database");
+    log("connecting to database");
 
-    let db = database::SQLiteDB::init_database("./database.sqlite")
+    let mut db = database::SQLiteDB::init_database("./database.sqlite")
         .expect("Database init failed");
 
 
@@ -41,7 +48,7 @@ fn main() {
 
     for stream in listener.incoming() {
         if let Ok(s) = stream {
-            handle_request(s, db.as_ref()).or_else(|e| {
+            handle_request(BufReader::new(s), db.as_mut()).or_else(|e| {
                 log(format!("handling failed: {:?}", e));
                 Err(())
             });
@@ -50,32 +57,57 @@ fn main() {
 }
 
 
-fn handle_request(mut s: TcpStream, db: &dyn Database) -> std::io::Result<()> {
-    let mut buffer = [0; 512];
+fn handle_request(mut s: BufReader<TcpStream>, db: &mut dyn Database) -> std::io::Result<()> {
 
-    s.read(&mut buffer)?;
-    let raw_req = std::str::from_utf8(&buffer).or_else(|e| Err(Error::from(ErrorKind::InvalidData)))?;
-    let req = match Request::try_from(raw_req) {
+    // TODO read until linefeed
+    let req = match Request::try_from(&mut s) {
         Ok(r) => r,
         Err(e) => { log(e); return Err(ErrorKind::InvalidData.into()); }
     };
 
-    log(format!("Got request {}", req.basic_info()));
+    //log(format!("Got request {}", req.basic_info()));
 
     // routing
-    if req.url.len() == 0 && req.method == Method::Get {
-        return handler::home_page(s);
+    for (route_name, test, handle_fn) in &handler::HANDLERS {
+        if test(&req) {
+            //log(format!("Handling {} with {}", req.basic_info(), route_name));
+            return match handle_fn(&req, db) {
+                Ok(res) => {
+                    res.write_html11(s.get_mut())
+                }
+                Err(HandlerError::E400(emsg)) => {
+                    log(&emsg);
+                    handler::send_gen_error_page(s.get_mut(), &emsg)
+                },
+                Err(HandlerError::E404) => {
+                    handler::send_404_page(s.get_mut(), &req)
+                },
+                Err(HandlerError::Custom(r)) => {
+                    r.write_html11(s.get_mut())
+                }
+            }
+        }
     }
-    else if req.url.len() > 0 && req.url[0].eq_ignore_ascii_case("static") {
-        return handler::static_content(s, req);
-    }
-    else if req.url.len() > 0 && req.url[0].eq_ignore_ascii_case("free") {
-        return handler::free_check(s, req);
-    }
-    else if req.url.len() > 0 && req.url[0].eq_ignore_ascii_case("create") {
-        return handler::create_page(s, req, db);
+    if req.url.len() == 1 {
+        // short url routing
+        match db.forward(&req.url[0]) {
+            Ok(long_url) => {
+                // forward
+                let mut h = HashMap::new();
+                h.insert("Location".into(), long_url);
+                h.insert("Cache-Control".into(), "no-cache".into());
+                return Response {
+                    code: ResponseCode::MovedPermanently,
+                    custom_headers: Some(h),
+                    body: ResponseBody::Empty
+                }.write_html11(s.get_mut())
+            },
+            Err(()) => {}
+        }
+
     }
 
+
     println!("unknown req: {:?}", req.url);
-    handler::send_404_page(s, req)
+    handler::send_404_page(s.get_mut(), &req)
 }
