@@ -44,7 +44,7 @@ impl Database for SQLiteDB {
 
 
     fn forward(&mut self, short_url: &str) -> Result<String, ()> {
-        let mut tx = self.connection.transaction().unwrap();
+        let tx = self.connection.transaction().unwrap();
         // get url
         let long: String = tx.query_row(
             "SELECT long FROM urls WHERE short = ?", &[short_url], |row| row.get(0))

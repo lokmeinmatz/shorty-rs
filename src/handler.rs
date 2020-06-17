@@ -34,6 +34,7 @@ type RoutingFn = fn(req: &Request) -> bool;
 pub enum HandlerError {
     E404,
     E400(String),
+    #[allow(dead_code)]
     Custom(Response)
 }
 
@@ -57,7 +58,6 @@ pub fn create_page(req: &Request, db: &dyn Database) -> Result<Response, Handler
                     // pw correct and long url valid
                     let short = map.get("short-url").map_or_else(|| gen_free_random_url(db),|s| s.to_owned());
                     if db.peek_long_url(&short).is_ok() {
-                        // TODO return when short is used
                         return Err(HandlerError::E400(format!("Short URL {} allready exists.", &short)));
                     }
                     let ip_hash = {
@@ -94,7 +94,7 @@ pub fn create_page(req: &Request, db: &dyn Database) -> Result<Response, Handler
     Err(HandlerError::E400("No body transmitted".into()))
 }
 
-fn gen_free_random_url(_db: &dyn Database) -> String {
+fn gen_free_random_url(db: &dyn Database) -> String {
     let mut rg = rand::thread_rng();
     let mut allowed_chars = (b'a'..b'z')
         .chain(b'A'..b'Z')
@@ -106,7 +106,7 @@ fn gen_free_random_url(_db: &dyn Database) -> String {
         let res: String = (0..5).map(|_|
             allowed_chars.nth(rg.gen_range(0, ALLOWED_CHARS_LEN)).unwrap() as char
         ).collect();
-        if validate_short_url(&res) {
+        if validate_short_url(&res, db) {
             return res;
         }
     }
@@ -160,7 +160,7 @@ pub fn send_404_page(s: &mut TcpStream, req: &Request) -> std::io::Result<()> {
     r.write_html11(s)
 }
 
-pub fn validate_short_url(short: &str) -> bool {
+pub fn validate_short_url(short: &str, db: &dyn Database) -> bool {
     if short.len() < 3 { return false; }
     if !RE_SHORT_URL_VALIDATE.as_ref().unwrap().is_match(&short) {
         return false;
@@ -169,13 +169,13 @@ pub fn validate_short_url(short: &str) -> bool {
     if RESERVED_URLS.iter().any(|ru| ru.eq_ignore_ascii_case(&short)){
         return false;
     }
-    // TODO saved urls
-    true
+    db.peek_long_url(short).is_err()
 }
 
 enum ValidationResult {
     Ok,
     NoUrl,
+    #[allow(dead_code)]
     InUse
 }
 
@@ -195,13 +195,13 @@ fn validate_long_url(long: &str) -> ValidationResult {
     ValidationResult::Ok
 }
 
-pub fn free_check(req: &Request, _db: &dyn Database) -> Result<Response, HandlerError> {
+pub fn free_check(req: &Request, db: &dyn Database) -> Result<Response, HandlerError> {
     //println!("{:?}", req.params);
     // TODO check long urls
     let mut rcode = ResponseCode::NotAcceptable;
     let mut rbody = ResponseBody::Empty;
     if let Some(short) = req.params.get("short") {
-        if validate_short_url(short) {
+        if validate_short_url(short, db) {
             rcode = ResponseCode::Ok;
             rbody = ResponseBody::Empty;
         }
@@ -241,7 +241,6 @@ pub fn static_content(req: &Request, _db: &dyn Database) -> Result<Response, Han
 
     let mut path: String = req.url[1..].join("/");
     if path.contains("..") {
-        // TODO allow 404 return
         return Err(HandlerError::E404);
     }
     path.insert_str(0, "./page/dist/");

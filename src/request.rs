@@ -82,6 +82,7 @@ pub struct Request {
 }
 
 impl Request {
+    #[allow(dead_code)]
     pub fn basic_info(&self) -> String {
         format!("Request {{ {:?} {} }}", self.method, self.url.join("/"))
     }

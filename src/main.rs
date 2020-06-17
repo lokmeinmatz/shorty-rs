@@ -26,7 +26,7 @@ const PORT: u16 = 7070;
 //const PORT: usize = 80; // production port
 
 
-fn main() {
+fn main() -> Result<(), ()> {
     log("Started Shorty-rs");
 
     let base_url = std::env::var("SHORTY_BASE_URL").expect("Set SHORTY_BASE_URL");
@@ -36,7 +36,7 @@ fn main() {
     request::init_regex();
 
     log("Starting listener");
-    let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], PORT))).unwrap();
+    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], PORT))).unwrap();
 
     log("connecting to database");
 
@@ -50,16 +50,17 @@ fn main() {
         if let Ok(s) = stream {
             handle_request(BufReader::new(s), db.as_mut()).or_else(|e| {
                 log(format!("handling failed: {:?}", e));
-                Err(())
-            });
+                Ok(())
+            })?;
         }
     }
+
+    Ok(())
 }
 
 
 fn handle_request(mut s: BufReader<TcpStream>, db: &mut dyn Database) -> std::io::Result<()> {
 
-    // TODO read until linefeed
     let req = match Request::try_from(&mut s) {
         Ok(r) => r,
         Err(e) => { log(e); return Err(ErrorKind::InvalidData.into()); }
@@ -68,7 +69,7 @@ fn handle_request(mut s: BufReader<TcpStream>, db: &mut dyn Database) -> std::io
     //log(format!("Got request {}", req.basic_info()));
 
     // routing
-    for (route_name, test, handle_fn) in &handler::HANDLERS {
+    for (_route_name, test, handle_fn) in &handler::HANDLERS {
         if test(&req) {
             //log(format!("Handling {} with {}", req.basic_info(), route_name));
             return match handle_fn(&req, db) {

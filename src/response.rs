@@ -1,7 +1,6 @@
 use std::net::TcpStream;
 use std::io::Write;
 use std::path::Path;
-use crate::log;
 use std::collections::HashMap;
 
 #[repr(u16)]
