@@ -1,4 +1,5 @@
 #![feature(osstring_ascii)]
+#![feature(result_flattening)]
 
 use std::net::{TcpListener, SocketAddr, TcpStream};
 use chrono::prelude::*;
@@ -22,7 +23,6 @@ pub(crate) fn log<T: AsRef<str>>(msg: T) {
     println!("[{:?}] {}", Local::now(), msg.as_ref());
 }
 
-const PORT: u16 = 7070;
 //const PORT: usize = 80; // production port
 
 
@@ -31,13 +31,14 @@ fn main() -> Result<(), ()> {
 
     let base_url = std::env::var("SHORTY_BASE_URL").expect("Set SHORTY_BASE_URL");
     let database_path = std::env::var("SHORTY_DB_PATH").expect("Set SHORTY_DB_PATH");
+    let port: u16 = std::env::var("SHORTY_PORT").ok().map(|s| s.parse().ok()).flatten().unwrap_or(80);
 
     log(format!("Base address: {}", base_url));
 
     request::init_regex();
 
     log("Starting listener");
-    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], PORT))).unwrap();
+    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).unwrap();
 
     log("connecting to database");
 
