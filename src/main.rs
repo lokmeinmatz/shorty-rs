@@ -30,6 +30,7 @@ fn main() -> Result<(), ()> {
     log("Started Shorty-rs");
 
     let base_url = std::env::var("SHORTY_BASE_URL").expect("Set SHORTY_BASE_URL");
+    let database_path = std::env::var("SHORTY_DB_PATH").expect("Set SHORTY_DB_PATH");
 
     log(format!("Base address: {}", base_url));
 
@@ -40,11 +41,11 @@ fn main() -> Result<(), ()> {
 
     log("connecting to database");
 
-    let mut db = database::SQLiteDB::init_database("./database.sqlite")
+    let mut db = database::SQLiteDB::init_database(&database_path)
         .expect("Database init failed");
 
 
-    log(format!("Listening on addr {:?}", listener.local_addr()));
+    log(format!("Listening on port {:?}", listener.local_addr().unwrap().port()));
 
     for stream in listener.incoming() {
         if let Ok(s) = stream {
@@ -66,12 +67,11 @@ fn handle_request(mut s: BufReader<TcpStream>, db: &mut dyn Database) -> std::io
         Err(e) => { log(e); return Err(ErrorKind::InvalidData.into()); }
     };
 
-    //log(format!("Got request {}", req.basic_info()));
-
     // routing
     for (_route_name, test, handle_fn) in &handler::HANDLERS {
         if test(&req) {
             //log(format!("Handling {} with {}", req.basic_info(), route_name));
+            // handle_fn can either return the valid response, or diffrent error codes
             return match handle_fn(&req, db) {
                 Ok(res) => {
                     res.write_html11(s.get_mut())
@@ -96,6 +96,8 @@ fn handle_request(mut s: BufReader<TcpStream>, db: &mut dyn Database) -> std::io
                 // forward
                 let mut h = HashMap::new();
                 h.insert("Location".into(), long_url);
+
+                // force browser to use no-cache to allow counting of redirects
                 h.insert("Cache-Control".into(), "no-cache".into());
                 return Response {
                     code: ResponseCode::MovedPermanently,

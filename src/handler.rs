@@ -7,6 +7,7 @@ use crate::log;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+/// the urls that are forbidden to use
 pub const RESERVED_URLS: [&str; 5] = [
     "create",
     "free",
@@ -15,6 +16,10 @@ pub const RESERVED_URLS: [&str; 5] = [
     "config"
 ];
 
+
+/// Contains all "static" handlers with fixed route (could also contain shortys)
+/// They are tested top-to-bottom
+/// if the test method is true, the handler is executed
 pub const HANDLERS: [(&'static str, RoutingFn, HandlerFn); 4] = [
     // home page
     ("home_page", |req| req.url.len() == 0 && req.method == Method::Get
@@ -41,8 +46,8 @@ pub enum HandlerError {
 type HandlerFn = fn(req: &Request, db: &dyn Database) -> Result<Response, HandlerError>;
 
 
-
-pub fn create_page(req: &Request, db: &dyn Database) -> Result<Response, HandlerError> {
+/// the post endpoint for a page-create-request
+fn create_page(req: &Request, db: &dyn Database) -> Result<Response, HandlerError> {
     log(format!("create {:?}", req.body));
     match &req.body {
         Some(RequestBody::FormUrlEncoded(map)) => {
@@ -94,6 +99,7 @@ pub fn create_page(req: &Request, db: &dyn Database) -> Result<Response, Handler
     Err(HandlerError::E400("No body transmitted".into()))
 }
 
+/// generates a free (valid) short url
 fn gen_free_random_url(db: &dyn Database) -> String {
     let mut rg = rand::thread_rng();
     let mut allowed_chars = (b'a'..b'z')
@@ -113,6 +119,8 @@ fn gen_free_random_url(db: &dyn Database) -> String {
     panic!("Not enough free short urls!")
 }
 
+
+/// home page get (static)
 pub fn home_page(_req: &Request, _db: &dyn Database) -> Result<Response, HandlerError> {
     let page = std::fs::read_to_string("./page/dist/index.html").unwrap();
     let r = Response{
@@ -123,6 +131,8 @@ pub fn home_page(_req: &Request, _db: &dyn Database) -> Result<Response, Handler
     Ok(r)
 }
 
+
+/// generic error page (dynamic)
 pub fn send_gen_error_page(s: &mut TcpStream, error: &str) -> std::io::Result<()> {
     let mut page = std::fs::read_to_string("./page/dist/400.html").unwrap();
 
@@ -136,6 +146,7 @@ pub fn send_gen_error_page(s: &mut TcpStream, error: &str) -> std::io::Result<()
     r.write_html11(s)
 }
 
+/// 404 page (dynamic)
 pub fn send_404_page(s: &mut TcpStream, req: &Request) -> std::io::Result<()> {
     if let Some(accpt) = req.headers.get("Accept") {
         if accpt.contains("text/html") {
@@ -160,6 +171,7 @@ pub fn send_404_page(s: &mut TcpStream, req: &Request) -> std::io::Result<()> {
     r.write_html11(s)
 }
 
+/// check if short url is free
 pub fn validate_short_url(short: &str, db: &dyn Database) -> bool {
     if short.len() < 3 { return false; }
     if !RE_SHORT_URL_VALIDATE.as_ref().unwrap().is_match(&short) {
@@ -188,6 +200,8 @@ impl ValidationResult {
     }
 }
 
+/// validate long url, fail if html injection etc.
+// TODO better validation
 fn validate_long_url(long: &str) -> ValidationResult {
     if long.len() < 3 || !RE_LONG_URL_VALIDATE.as_ref().unwrap().is_match(&long) {
         return ValidationResult::NoUrl;
@@ -195,6 +209,8 @@ fn validate_long_url(long: &str) -> ValidationResult {
     ValidationResult::Ok
 }
 
+/// Endpoint for "while typing" to give a preview if ths is available
+/// format: /free?short=...
 pub fn free_check(req: &Request, db: &dyn Database) -> Result<Response, HandlerError> {
     //println!("{:?}", req.params);
     // TODO check long urls

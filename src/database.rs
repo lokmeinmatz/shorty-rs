@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params, NO_PARAMS};
+use rusqlite::{Connection, params};
 use std::path::Path;
 
 
@@ -50,7 +50,7 @@ impl Database for SQLiteDB {
             "SELECT long FROM urls WHERE short = ?", &[short_url], |row| row.get(0))
             .map_err(|_| ())?;
 
-        tx.execute("UPDATE urls SET redirects = redirects + 1, last_redirect = datetime('now', 'localtime')", NO_PARAMS)
+        tx.execute("UPDATE urls SET redirects = redirects + 1, last_redirect = datetime('now', 'localtime') WHERE short = ?", &[short_url])
             .unwrap();
 
         tx.commit().unwrap();

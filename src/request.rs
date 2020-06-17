@@ -9,6 +9,8 @@ pub static RE_GET_HEADER: Option<Regex> = None;
 pub static RE_SHORT_URL_VALIDATE: Option<Regex> = None;
 pub static RE_LONG_URL_VALIDATE: Option<Regex> = None;
 
+
+// TODO change to safe variant
 pub(crate) fn init_regex() {
 
     log("Init regex");
@@ -21,12 +23,15 @@ pub(crate) fn init_regex() {
     }
 }
 
+/// checks if c is a "hex char", eg. 0-9, a-f, A-F
 #[inline]
 fn is_hex_char(c: char) -> bool {
 
     ('0'..='9').contains(&c) || ('a'..='f').contains(&c) || ('A'..='F').contains(&c)
 }
 
+
+/// Decodes an url encoded ASCII string
 pub fn decode_url_str(mut encoded: &str) -> Option<String> {
     let mut result = String::with_capacity(encoded.len());
     while let Some(next_perc_idx) = encoded.find("%") {
@@ -65,12 +70,14 @@ impl TryFrom<&str> for Method {
     }
 }
 
-
+/// The content if the client provided an request body
+/// Currently only accepting x-form-url-encoded
 #[derive(Debug)]
 pub enum RequestBody {
     FormUrlEncoded(HashMap<String, String>)
 }
 
+/// The request send from the client
 #[derive(Debug)]
 pub struct Request {
     pub method: Method,
@@ -82,6 +89,8 @@ pub struct Request {
 }
 
 impl Request {
+
+    /// Returns an info- `String` about the request, containing method and url-path
     #[allow(dead_code)]
     pub fn basic_info(&self) -> String {
         format!("Request {{ {:?} {} }}", self.method, self.url.join("/"))
@@ -101,6 +110,7 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
             return Err("No http header");
         }
 
+        // parse first line
         let (method, url, query): (Method, Vec<String>, HashMap<String, String>) = {
             //log(l);
             let l = buffer.as_str();
@@ -125,6 +135,8 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
             (method, url_match, q)
         };
 
+
+        // parse headers
         let mut headers = HashMap::new();
         buffer.clear();
         while let Ok(l) = s.read_line(&mut buffer) {
@@ -139,6 +151,7 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
         }
         let mut body = None;
 
+        // parse request body (form)
         if method == Method::Post && headers.get("Content-Type").map_or(false,
                     |ct: &String| ct.eq_ignore_ascii_case("application/x-www-form-urlencoded")) {
             if let Ok(l) = headers.get("Content-Length").map_or(Ok(0usize), |s| s.parse::<usize>()) {

@@ -3,6 +3,8 @@ use std::io::Write;
 use std::path::Path;
 use std::collections::HashMap;
 
+
+/// the code of the response.
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
 pub enum ResponseCode {
@@ -35,7 +37,7 @@ pub enum ResponseBody {
 }
 
 impl ResponseBody {
-
+    /// Load a body from file and set the matching content-type, or set it to `text/plain` and load as u8 array.
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
         let path = path.as_ref();
         if let Some(e) = path.extension() {
@@ -63,6 +65,8 @@ impl ResponseBody {
         if self == &ResponseBody::Empty { true }
         else { false }
     }
+
+    /// returns the MIME content-type of the body (as declared)
     pub fn get_content_type(&self) -> String {
         match self {
             ResponseBody::Empty => "".into(),
@@ -73,6 +77,7 @@ impl ResponseBody {
         }
     }
 
+    /// returns the length in bytes
     pub fn get_length(&self) -> usize {
         match self {
             ResponseBody::Empty => 0,
@@ -81,6 +86,7 @@ impl ResponseBody {
         }
     }
 
+    /// returns the body as byte slice
     pub fn get_bytes(&self) -> &[u8] {
         match self {
             ResponseBody::Empty => &[],
@@ -90,6 +96,7 @@ impl ResponseBody {
     }
 }
 
+/// The response that can be send over TCP to the client
 #[derive(Debug)]
 pub struct Response {
     pub code: ResponseCode,
@@ -99,9 +106,13 @@ pub struct Response {
 
 
 impl Response {
+    /// Write as http 1.1 to the TCP stream
+    /// Extend here if you want to add support for Http2/3 etc
     pub fn write_html11(self, s: &mut TcpStream) -> std::io::Result<()> {
         //println!("Sending response {:?} ", self);
         writeln!(s, "HTTP/1.1 {} {}", self.code as u16, self.code.as_reason())?;
+
+        // write custom headers
         if let Some(headers) = &self.custom_headers {
             for (key, val) in headers.iter() {
                 writeln!(s, "{}: {}", key, val)?;
@@ -112,6 +123,7 @@ impl Response {
         writeln!(s, "Content-Type: {}", self.body.get_content_type())?;
         writeln!(s, "Content-Length: {}", self.body.get_length())?;
         writeln!(s, "")?;
+        // write body
         s.write_all(self.body.get_bytes())
     }
 }

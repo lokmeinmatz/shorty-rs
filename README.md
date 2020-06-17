@@ -10,13 +10,13 @@ Libs used for convinience:
 - rand for generating random urls
 - rusqlite for database
 
-Currently, you have to set the env-var SHORTY_BASE_URL to the
+Currently, you have to set the env-var `SHORTY_BASE_URL` to the
 base url of this service, so the interpolated links of the "created"
 page work. Otherwise, this service is hosting-url independent.
 
 (Could also fix this by applying the prefix via ts like in the index page)
 
-The database is stored in the same dir as the executable (see database.sqlite in this repo)
+The database is stored in the path of env var `SHORTY_DB_PATH`
 and contains two tables:
 
 - `passwords`:
@@ -37,4 +37,3 @@ Current version is single-threaded.
 - Fix unsafe Regex caching
 - multithreading!!! (one listnener, than distribution)
 - check all unwraps / expects and if they are safe.
-- write more (doc)comments
