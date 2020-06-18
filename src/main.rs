@@ -12,6 +12,7 @@ use crate::database::Database;
 use crate::handler::HandlerError;
 use crate::response::{Response, ResponseCode, ResponseBody};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 mod response;
 
@@ -24,7 +25,7 @@ pub(crate) fn log<T: AsRef<str>>(msg: T) {
 }
 
 //const PORT: usize = 80; // production port
-
+pub static DEBUG_VERBOSE: AtomicBool = AtomicBool::new(false);
 
 fn main() -> Result<(), ()> {
     log("Started Shorty-rs");
@@ -32,8 +33,16 @@ fn main() -> Result<(), ()> {
     let base_url = std::env::var("SHORTY_BASE_URL").expect("Set SHORTY_BASE_URL");
     let database_path = std::env::var("SHORTY_DB_PATH").expect("Set SHORTY_DB_PATH");
     let port: u16 = std::env::var("SHORTY_PORT").ok().map(|s| s.parse().ok()).flatten().unwrap_or(80);
+    DEBUG_VERBOSE.store(std::env::var("SHORTY_DEBUG").is_ok(), Ordering::Release);
 
-    log(format!("Base address: {}", base_url));
+    log(format!("Config from env-vars:\n\
+     - Base address: {}\n\
+     - Database:     {}\n\
+     - Port:         {}\n\
+     - Debug:        {}",
+                base_url, database_path, port, DEBUG_VERBOSE.load(Ordering::Acquire)));
+
+
 
     request::init_regex();
 

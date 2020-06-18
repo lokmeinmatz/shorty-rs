@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use regex::Regex;
-use crate::log;
+use crate::{log, DEBUG_VERBOSE};
 use std::io::{BufReader, BufRead, Read};
 use std::net::{TcpStream, IpAddr};
+use std::sync::atomic::Ordering;
 
 pub static RE_GET_HEADER: Option<Regex> = None;
 pub static RE_SHORT_URL_VALIDATE: Option<Regex> = None;
@@ -104,6 +105,8 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
     fn try_from(s: &mut BufReader<TcpStream>) -> Result<Self, Self::Error> {
         let mut buffer = String::with_capacity(1024);
 
+        let debug = DEBUG_VERBOSE.load(Ordering::Relaxed);
+
         let linescan = s.read_line(&mut buffer);
 
         if linescan.is_err() || linescan.unwrap() == 0 {
@@ -114,6 +117,7 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
         let (method, url, query): (Method, Vec<String>, HashMap<String, String>) = {
             //log(l);
             let l = buffer.as_str();
+            if debug { println!("{}", l); }
             let matches = RE_GET_HEADER.as_ref().unwrap().captures(l).ok_or("no http header")?;
             let method_match = matches.get(1).ok_or("no method match")?;
             let url_match: Vec<String> = matches.get(2)
@@ -141,7 +145,7 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
         buffer.clear();
         while let Ok(l) = s.read_line(&mut buffer) {
             if l == 0 || buffer.trim().is_empty() { break }
-
+            if debug { println!("{}", buffer); }
             if let Some(split_idx) = buffer.find(":") {
                 let name = (&buffer[0..split_idx]).trim();
                 let value = (&buffer[split_idx + 1 ..]).trim();
