@@ -2,6 +2,8 @@ use std::net::TcpStream;
 use std::io::Write;
 use std::path::Path;
 use std::collections::HashMap;
+use crate::DEBUG_VERBOSE;
+use std::sync::atomic::Ordering;
 
 
 /// the code of the response.
@@ -111,14 +113,17 @@ impl Response {
     pub fn write_html11(self, s: &mut TcpStream) -> std::io::Result<()> {
         //println!("Sending response {:?} ", self);
         writeln!(s, "HTTP/1.1 {} {}", self.code as u16, self.code.as_reason())?;
-
+        if DEBUG_VERBOSE.load(Ordering::Relaxed) { println!("Wrinting response:\n{:?}", &self) }
         // write custom headers
         if let Some(headers) = &self.custom_headers {
             for (key, val) in headers.iter() {
                 writeln!(s, "{}: {}", key, val)?;
             }
         }
-        if self.body.is_empty() { return Ok(()) }
+        if self.body.is_empty() {
+            writeln!(s, "")?;
+            return Ok(())
+        }
 
         writeln!(s, "Content-Type: {}", self.body.get_content_type())?;
         writeln!(s, "Content-Length: {}", self.body.get_length())?;

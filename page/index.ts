@@ -4,14 +4,15 @@ const validityErrorMessages = {
     unacceptableChars: 'Only use the chars a-z, A-Z, 0-9, -, _'
 }
 
-
+const BASE_SERVICE_URL = location.href
+console.log(`Baseurl: ${BASE_SERVICE_URL}`)
 
 window.onload = () => {
     console.log('TS for shortyRS loaded.')
 
     // set custom short url prefix display
     const prefixDisplay = document.getElementById('url-prefix')
-    prefixDisplay.textContent = `${location.host}/`
+    prefixDisplay.textContent = BASE_SERVICE_URL
 
     
     // --- long url ---
@@ -26,18 +27,22 @@ window.onload = () => {
             longValidityInfo.style.display = 'none'
             return
         }
-
-        const res = await fetch(`/free?long=${url}`)
-        if (res.status != 200) {
-            longUrlInput.classList.add('invalid')
-            longUrlInput.classList.remove('valid')
-            longValidityInfo.style.display = 'block'
-            longValidityInfo.textContent = await res.text()
-        }
-        else {
-            longUrlInput.classList.add('valid')
-            longUrlInput.classList.remove('invalid')
-            longValidityInfo.style.display = 'none'
+        try {
+            const res = await fetch(`${BASE_SERVICE_URL}free?long=${url}`)
+            if (res.status != 200) {
+                console.log('valid long url')
+                longUrlInput.classList.add('invalid')
+                longUrlInput.classList.remove('valid')
+                longValidityInfo.style.display = 'block'
+                longValidityInfo.textContent = await res.text()
+            }
+            else {
+                longUrlInput.classList.add('valid')
+                longUrlInput.classList.remove('invalid')
+                longValidityInfo.style.display = 'none'
+            }
+        } catch (error) {
+            console.error(error)
         }
     }
 

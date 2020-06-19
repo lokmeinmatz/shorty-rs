@@ -117,7 +117,7 @@ impl TryFrom<&mut BufReader<TcpStream>> for Request {
         let (method, url, query): (Method, Vec<String>, HashMap<String, String>) = {
             //log(l);
             let l = buffer.as_str();
-            if debug { println!("{}", l); }
+            if debug { print!("{}", l); }
             let matches = RE_GET_HEADER.as_ref().unwrap().captures(l).ok_or("no http header")?;
             let method_match = matches.get(1).ok_or("no method match")?;
             let url_match: Vec<String> = matches.get(2)
