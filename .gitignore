@@ -17,4 +17,5 @@ Cargo.lock
 
 /page/.cache
 /page/node_modules
+/page/dist
 /.idea
