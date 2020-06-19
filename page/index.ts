@@ -74,7 +74,7 @@ window.onload = () => {
             return
         }
 
-        let res = await fetch(`/free?short=${url}`)
+        let res = await fetch(`${BASE_SERVICE_URL}free?short=${url}`)
         if (!res.ok) {
             shortValidityInfo.style.display = 'block'
             shortValidityInfo.textContent = validityErrorMessages.allreadyUsed
